@@ -1,0 +1,335 @@
+{
+  "id": "wfFeedbackAnalis2",
+  "name": "Workflow 2: Feedback AI & Ticket",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "feedback",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        100,
+        200
+      ],
+      "id": "webhook-node",
+      "name": "Webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-api-key",
+              "leftValue": "={{ $json.headers[\"x-api-key\"] }}",
+              "rightValue": "mi-secreto-super-seguro-2024",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        300,
+        200
+      ],
+      "id": "if-api-key-node",
+      "name": "If API Key Valid"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"detail\": \"No autorizado\"\n}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        500,
+        350
+      ],
+      "id": "respond-401-node",
+      "name": "Respond 401"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://127.0.0.1:8000/usuarios/{{ $node.Webhook.json.body.usuario_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        550,
+        100
+      ],
+      "id": "http-user-node",
+      "name": "HTTP Request - User"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"mensaje\": \"Analiza este feedback de {{ $json.nombre }} (plan: {{ $json.plan }}): '{{ $node.Webhook.json.body.mensaje }}' — Calificación: {{ $node.Webhook.json.body.calificacion }}/5. Devuelve JSON: { sentimiento, problema_principal, accion }\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        750,
+        100
+      ],
+      "id": "http-ia-node",
+      "name": "HTTP Request - IA"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-rating",
+              "leftValue": "={{ $node.Webhook.json.body.calificacion }}",
+              "rightValue": 3,
+              "operator": {
+                "type": "number",
+                "operation": "lt",
+                "name": "filter.operator.lessThan"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        950,
+        100
+      ],
+      "id": "if-rating-node",
+      "name": "If Rating Bad"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/tareas",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"titulo\": \"Ticket feedback: {{ $node['HTTP Request - IA'].json.problema_principal }}\",\n  \"prioridad\": \"alta\",\n  \"descripcion\": \"Usuario: {{ $node['HTTP Request - User'].json.nombre }} | Cal: {{ $node.Webhook.json.body.calificacion }}/5\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1150,
+        0
+      ],
+      "id": "http-create-task-node",
+      "name": "HTTP Request - Create Task"
+    },
+    {
+      "parameters": {
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "name": "ticket_creado",
+              "value": "=true",
+              "type": "boolean"
+            },
+            {
+              "name": "sentimiento",
+              "value": "={{ $node[\"HTTP Request - IA\"].json.sentimiento }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1350,
+        0
+      ],
+      "id": "set-true-branch-node",
+      "name": "Set True Branch"
+    },
+    {
+      "parameters": {
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "name": "ticket_creado",
+              "value": "=false",
+              "type": "boolean"
+            },
+            {
+              "name": "sentimiento",
+              "value": "={{ $node[\"HTTP Request - IA\"].json.sentimiento }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1350,
+        200
+      ],
+      "id": "set-false-branch-node",
+      "name": "Set False Branch"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, sentimiento: $json.sentimiento, ticket_creado: $json.ticket_creado }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1600,
+        100
+      ],
+      "id": "respond-200-node",
+      "name": "Respond 200"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "If API Key Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If API Key Valid": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - User",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request - User": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request - IA": {
+      "main": [
+        [
+          {
+            "node": "If Rating Bad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Rating Bad": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - Create Task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set False Branch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request - Create Task": {
+      "main": [
+        [
+          {
+            "node": "Set True Branch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set True Branch": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set False Branch": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
